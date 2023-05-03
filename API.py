@@ -1,0 +1,412 @@
+import pandas as pd
+import json
+import argparse
+import time
+import requests
+import os
+
+
+def my_api(token, domain, user, customer_endpoint=None):
+    if not domain:
+        raise ValueError("Domain cannot be empty")
+
+    token_header = 'APIToken ' + token
+    real_user = user
+
+    if not customer_endpoint:
+        customer_endpoint = "https://" + domain
+
+    print(token_header)
+    print(real_user)
+    print(customer_endpoint)
+
+    return token_header, real_user, customer_endpoint
+
+
+
+def httpGet(endpoint, token_header, customer_endpoint):
+    url = customer_endpoint + endpoint
+    headers={'Authorization': token_header}
+    resp = requests.get(url, headers=headers)
+    print(resp)
+    print(resp.text)
+    return resp
+
+
+def httpGetPagination(endpoint, token_header, customer_endpoint):
+    query_params = "?limit=100"
+    nextPage = True
+    df_list = []
+    FirstRun = True
+    sleepcount = 0
+    while nextPage:
+        print(endpoint+query_params)
+        response_json = json.loads(httpGet(endpoint+query_params, token_header, customer_endpoint).text)
+        data = response_json.get('data')
+        if isinstance(data, list):
+            df_list.append(pd.DataFrame.from_records(data))
+        elif isinstance(data, dict):
+            df_list.append(pd.DataFrame.from_records(data.get('groups')))
+        pagination = response_json['pagination']
+        if FirstRun:
+            total_left = pagination['totalItems']
+            FirstRun = False
+        try:
+            cursor = pagination['nextCursor']
+        except:
+            cursor = None
+        if cursor:
+            query_params = "?limit=100&cursor=" + cursor
+        else:
+            nextPage = False
+
+        total_left -= 100
+        if total_left < 0:
+            total_left = 0
+
+        sleepcount += 1
+        if sleepcount >= 5:
+            time.sleep(1)
+            sleepcount = 0
+        print("Items Remaining: ",total_left)
+    raw_df = pd.concat(df_list)
+    print(endpoint+"\n", raw_df)
+    return raw_df
+
+
+
+def httpGetPaginationIds(endpoint, level, level_id_df):
+    param = "siteIds"
+
+    if level == "accounts":
+        param = "accountIds"
+    elif level == "sites":
+        param = "siteIds"
+    elif level == "groups":
+        param = "groupIds"
+
+    df_list = []
+
+    print(level)
+    print(param)
+
+    for level_id in level_id_df["id"].to_list():
+        query_params_base = "?limit=100"+"&"+param+"="+level_id
+        query_params = "?limit=100"+"&"+param+"="+level_id
+        nextPage = True
+
+        FirstRun = True
+        sleepcount = 0
+        while nextPage:
+            print(endpoint+query_params)
+            response_json = json.loads(httpGet(endpoint+query_params).text)
+            data = response_json['data']
+            dataframe_tmp = pd.DataFrame.from_records(data)
+            dataframe_tmp["level"] = level
+            dataframe_tmp["level_id"]= level_id
+            df_list.append(dataframe_tmp)
+            pagination = response_json['pagination']
+            if FirstRun:
+                total_left = pagination['totalItems']
+                FirstRun = False
+            try:
+                cursor = pagination['nextCursor']
+            except:
+                cursor = None
+            if cursor:
+                query_params = query_params_base+"&cursor=" + cursor
+            else:
+                nextPage = False
+
+            total_left -= 100
+            if total_left < 0:
+                total_left = 0
+
+            sleepcount += 1
+            if sleepcount >= 5:
+                time.sleep(1)
+                sleepcount = 0
+            print("Items Remaining: ",total_left)
+    raw_df = pd.concat(df_list)
+    try:
+        tmp_policy_df = pd.merge(raw_df,level_df, how='left', left_on='level_id', right_on='id')
+        print(tmp_policy_df)
+        raw_df = tmp_policy_df
+    except:
+        print("GlobalPolicy")
+
+    print(endpoint+"\n", raw_df)
+    return raw_df
+
+def getGlobalPolicies():
+    tmp_global_list = []
+    endpoint = "/web/api/v2.1/tenant/policy"
+    query_params = "?limit=100"
+    response_json = json.loads(httpGet(endpoint+query_params).text)
+    data = response_json['data']
+    response_fw = httpGet("/web/api/v2.1/firewall-control/configuration")
+
+    if response_fw.status_code == 200:
+        response_fwjson = json.loads(response_fw.text)
+        fw_data = response_fwjson['data']
+        data['fw_enabled'] = fw_data['enabled']
+        data['fw_inheritAllFirewallRules'] = fw_data['inheritAllFirewallRules']
+        data['fw_inheritedFrom'] = fw_data['inheritedFrom']
+        data['fw_inherits'] = fw_data['inherits']
+        data['fw_inheritSettings'] = fw_data['inheritSettings']
+        data['fw_locationAware'] = fw_data['locationAware']
+        #data['fw_reportBlocked'] = fw_data['reportBlocked']
+        data['fw_selectedTags'] = fw_data['selectedTags']
+    else:
+        data['fw_enabled'] = None
+        data['fw_inheritAllFirewallRules'] = None
+        data['fw_inheritedFrom'] = None
+        data['fw_inherits'] = None
+        data['fw_inheritSettings'] = None
+        data['fw_locationAware'] = None
+        #data['fw_reportBlocked'] = None
+        data['fw_selectedTags'] = None
+
+    response_dc = httpGet("/web/api/v2.1/device-control/configuration")
+    if response_dc.status_code == 200:
+        response_dcjson = json.loads(response_dc.text)
+        dc_data = response_dcjson['data']
+        data['dc_disableBleCommunication'] = dc_data['disableBleCommunication']
+        data['dc_disableRfcomm'] = dc_data['disableRfcomm']
+        data['dc_disallowAccessPermissionControl'] = dc_data['disallowAccessPermissionControl']
+        data['dc_enabled'] = dc_data['enabled']
+        data['dc_inheritedFrom'] = dc_data['inheritedFrom']
+        data['dc_inherits'] = dc_data['inherits']
+        data['dc_reportApproved'] = dc_data['reportApproved']
+        data['dc_reportBlocked'] = dc_data['reportBlocked']
+        data['dc_reportReadOnly'] = dc_data['reportReadOnly']
+    else:
+        data['dc_dc_disableBleCommunication'] = None
+        data['dc_disableRfcomm'] = None
+        data['dc_disallowAccessPermissionControl'] = None
+        data['dc_enabled'] = None
+        data['dc_inheritedFrom'] = None
+        data['dc_inherits'] = None
+        data['dc_reportBlocked'] = None
+        data['dc_reportReadOnly'] = None
+
+    tmp_global_list.append(data)
+    data_df = pd.DataFrame.from_records(tmp_global_list)
+    return data_df
+
+import pandas as pd
+import time
+
+def createLevelsDF(token_header, customer_endpoint):
+    id_url = "/web/api/v2.1/accounts"
+    account_df = httpGetPagination(id_url, token_header, customer_endpoint)
+
+    id_url = "/web/api/v2.1/sites"
+    query_params = "?limit=100"
+    nextPage = True
+    site_df_list = []
+    while nextPage:
+        print(id_url + query_params)
+        response_json = json.loads(httpGet(id_url + query_params, token_header, customer_endpoint).text)
+        tmp_data = response_json['data']
+        data = tmp_data['sites']
+        site_df_list.append(pd.DataFrame.from_records(data))
+        pagination = response_json['pagination']
+        try:
+            cursor = pagination['nextCursor']
+        except:
+            cursor = None
+
+        if cursor:
+            query_params = "?limit=100&cursor=" + cursor
+        else:
+            nextPage = False
+        time.sleep(1)
+
+    site_df = pd.concat(site_df_list)
+
+    id_url = "/web/api/v2.1/groups"
+    query_params = "?limit=100"
+    nextPage = True
+    group_df_list = []
+    while nextPage:
+        print(id_url + query_params)
+        response_json = json.loads(httpGet(id_url + query_params, token_header, customer_endpoint).text)
+        tmp_data = response_json['data']
+        for item in tmp_data:
+            if 'groups' in item:
+                data = item['groups']
+                group_df_list.append(pd.DataFrame.from_records(data))
+        pagination = response_json['pagination']
+        try:
+            cursor = pagination['nextCursor']
+        except:
+            cursor = None
+
+        if cursor:
+            query_params = "?limit=100&cursor=" + cursor
+        else:
+            nextPage = False
+        time.sleep(1)
+
+    if len(group_df_list) == 0:
+        group_df = pd.DataFrame(columns=['id', 'siteId', 'name'])
+    else:
+        group_df = pd.concat(group_df_list)[['id', 'siteId', 'name']].copy()
+
+    new_account_df = account_df[['id', 'name']].copy()
+    site_df = site_df[['id','accountId','name']].copy()
+    group_df = group_df[['id','siteId','name']].copy()
+
+    new_site_df = pd.merge(site_df,new_account_df, how='left', left_on='accountId', right_on='id')
+    new_site_df['Scope'] = new_site_df["name_y"] + "\\" + new_site_df["name_x"]
+    new_site_df = new_site_df.rename(columns={"id_x":"id"})
+    new_site_df = new_site_df.drop(columns=['accountId', 'name_x', 'id_y', 'name_y'])
+
+    new_group_df = pd.merge(group_df, new_site_df, how='left', left_on='siteId', right_on='id')
+    new_group_df['Scope'] = new_group_df['Scope'] + "\\" + new_group_df['name']
+    new_group_df = new_group_df.drop(columns=['siteId', 'name', 'id_y'])
+    new_group_df = new_group_df.rename(columns={"id_x":"id"})
+
+    new_account_df = new_account_df.rename(columns={"name":"Scope"})
+
+    print("SiteDF:\n", site_df)
+    print("GroupDF:\n", group_df)
+    print("NewSiteDF\n", new_site_df)
+    print("NewGroupDF\n", new_group_df)
+    print("NewAccountDF\n", new_account_df)
+
+    return new_account_df, new_site_df, new_group_df
+
+
+# Levels = accounts, sites, groups
+def getPolicies(level, level_df, domain, customer_endpoint, token_header):
+    if level == "accounts":
+        id_url = "/web/api/v2.1/accounts"
+        fw_param = "accountIds"
+    elif level == "sites":
+        id_url = "/web/api/v2.1/sites"
+        fw_param = "siteIds"
+    elif level == "groups":
+        id_url = "/web/api/v2.1/groups"
+        fw_param = "groupIds"
+    else:
+        id_url = "/web/api/v2.1/accounts"
+
+    if level == "global":
+        policy_df = getGlobalPolicies()
+        policy_df['Scope'] = "Global"
+        policy_df['id'] = 0
+        policy_df['level_id'] = 0
+    else:
+        level_df.to_csv("levels-"+level+"-"+domain+".csv")
+        level_id_list = level_df['id'].to_list()
+        policy_df_list = []
+        iterations_length = len(level_id_list)
+        print(iterations_length)
+        for level_id in level_id_list:
+            policies_url = id_url + "/" + str(level_id) + "/policy"
+            print(policies_url)
+            response = httpGet(policies_url, customer_endpoint, token_header)
+            if response.status_code == 200:
+                response_json = json.loads(response.text)
+                data = response_json['data']
+                data['level_id'] = level_id
+                fwparam = '?'+fw_param+"="+level_id
+                response_fw = httpGet("/web/api/v2.1/firewall-control/configuration"+fwparam, customer_endpoint, token_header)
+                if response_fw.status_code == 200:
+                    response_fwjson = json.loads(response_fw.text)
+                    fw_data = response_fwjson['data']
+                    data['fw_enabled'] = fw_data['enabled']
+                    data['fw_inheritAllFirewallRules'] = fw_data['inheritAllFirewallRules']
+                    data['fw_inheritedFrom'] = fw_data['inheritedFrom']
+                    data['fw_inherits'] = fw_data['inherits']
+                    data['fw_inheritSettings'] = fw_data['inheritSettings']
+                    data['fw_locationAware'] = fw_data['locationAware']
+                    #data['fw_reportBlocked'] = fw_data['reportBlocked']
+                    data['fw_selectedTags'] = fw_data['selectedTags']
+                else:
+                    data['fw_enabled'] = None
+                    data['fw_inheritAllFirewallRules'] = None
+                    data['fw_inheritedFrom'] = None
+                    data['fw_inherits'] = None
+                    data['fw_inheritSettings'] = None
+                    data['fw_locationAware'] = None
+                    #data['fw_reportBlocked'] = None
+                    data['fw_selectedTags'] = None
+
+                response_dc = httpGet("/web/api/v2.1/device-control/configuration"+fwparam, customer_endpoint, token_header)
+                if response_dc.status_code == 200:
+                    response_dcjson = json.loads(response_dc.text)
+                    dc_data = response_dcjson['data']
+                    data['dc_disableBleCommunication'] = dc_data['disableBleCommunication']
+                    data['dc_disableRfcomm'] = dc_data['disableRfcomm']
+                    data['dc_disallowAccessPermissionControl'] = dc_data['disallowAccessPermissionControl']
+                    data['dc_enabled'] = dc_data['enabled']
+                    data['dc_inheritedFrom'] = dc_data['inheritedFrom']
+                    data['dc_inherits'] = dc_data['inherits']
+                    data['dc_reportApproved'] = dc_data['reportApproved']
+                    data['dc_reportBlocked'] = dc_data['reportBlocked']
+                    data['dc_reportReadOnly'] = dc_data['reportReadOnly']
+                else:
+                    data['dc_dc_disableBleCommunication'] = None
+                    data['dc_disableRfcomm'] = None
+                    data['dc_disallowAccessPermissionControl'] = None
+                    data['dc_enabled'] = None
+                    data['dc_inheritedFrom'] = None
+                    data['dc_inherits'] = None
+                    data['dc_reportBlocked'] = None
+                    data['dc_reportReadOnly'] = None
+
+                policy_df_list.append(data)
+            else:
+                print("ERROR Status Code: " + str(response.status_code))
+                print(policies_url)
+                print(response.text)
+
+            iterations_length -= 1
+            print(level + " Policies left: " + str(iterations_length))
+        policy_df = pd.DataFrame.from_records(policy_df_list)
+
+
+    policy_df['level'] = level
+    try:
+        tmp_policy_df = pd.merge(policy_df,level_df, how='left', left_on='level_id', right_on='id')
+        print(tmp_policy_df)
+        policy_df = tmp_policy_df
+    except:
+        print("GlobalPolicy")
+
+    print("Policy DF "+level+": ")
+    print(policy_df)
+    return policy_df
+
+def getAllPolicies(level_account_df, level_site_df, level_group_df, domain, customer_endpoint, token_header=None):
+    group_policy_df = getPolicies("groups", level_group_df, domain, customer_endpoint, token_header=token_header)
+    site_policy_df = getPolicies("sites", level_site_df, domain, customer_endpoint, token_header=token_header)
+    account_policy_df = getPolicies("accounts", level_account_df, domain, customer_endpoint, token_header=token_header)
+    global_policy_df = getPolicies("global", None, domain, customer_endpoint, token_header=token_header)
+    policy_frames = [global_policy_df, account_policy_df, site_policy_df, group_policy_df]
+    # existing code here
+
+    policy_df = pd.concat(policy_frames)
+    del policy_df['level_id']
+    print(policy_df)
+
+    return(policy_df)
+
+
+def getAllLevels(ep,level_account_df,level_site_df, level_group_df):
+    global_df = httpGetPagination(ep)
+    global_df['level'] = 'Global'
+    account_df = httpGetPaginationIds(ep,"account",level_account_df)
+    site_df = httpGetPaginationIds(ep,"site",level_site_df)
+    group_df = httpGetPaginationIds(ep,"groups",level_group_df)
+    policy_frames = [global_df,account_df,site_df,group_df]
+
+    policy_df = pd.concat(policy_frames)
+    del policy_df['level_id']
+    print(policy_df)
+    return policy_df
+
+
