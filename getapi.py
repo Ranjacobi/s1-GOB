@@ -17,8 +17,6 @@ class APIClient:
         url = self.customer_endpoint + endpoint
         headers={'Authorization': self.token_header}
         resp = requests.get(url, headers=headers)
-        print(resp)
-        print(resp.text)
         return resp
 
     def httpGetPagination(self, endpoint):
@@ -28,7 +26,7 @@ class APIClient:
         FirstRun = True
         sleepcount = 0
         while nextPage:
-            print(endpoint+query_params)
+
             response_json = json.loads(self.httpGet(endpoint+query_params).text)
             data = response_json['data']
             df_list.append(pd.DataFrame.from_records(data))
@@ -70,8 +68,7 @@ class APIClient:
 
         df_list = []
 
-        print(level)
-        print(param)
+
 
         for level_id in level_id_df["id"].to_list():
             query_params_base = "?limit=100" + "&" + param + "=" + level_id
@@ -81,7 +78,6 @@ class APIClient:
             FirstRun = True
             sleepcount = 0
             while nextPage:
-                print(endpoint + query_params)
                 response_json = json.loads(self.httpGet(endpoint + query_params).text)
                 data = response_json['data']
                 dataframe_tmp = pd.DataFrame.from_records(data)
@@ -126,8 +122,7 @@ class APIClient:
 
         df_list = []
 
-        print(level)
-        print(param)
+
 
         for level_id in level_id_df["id"].to_list():
             query_params_base = "?limit=100" + "&" + param + "=" + level_id
@@ -137,7 +132,6 @@ class APIClient:
             FirstRun = True
             sleepcount = 0
             while nextPage:
-                print(endpoint + query_params)
                 response_json = json.loads(self.httpGet(endpoint + query_params).text)
                 data = response_json['data']
                 dataframe_tmp = pd.DataFrame.from_records(data)
@@ -169,7 +163,6 @@ class APIClient:
         raw_df = pd.concat(df_list)
         try:
             tmp_policy_df = pd.merge(raw_df, self.level_df, how='left', left_on='level_id', right_on='id')
-            print(tmp_policy_df)
             raw_df = tmp_policy_df
         except:
             print("GlobalPolicy")
@@ -241,7 +234,6 @@ class APIClient:
         nextPage = True
         df_list = []
         while nextPage:
-            print(id_url + query_params)
             response_json = json.loads(self.httpGet(id_url + query_params).text)
             tmp_data = response_json['data']
             data = tmp_data['sites']
@@ -269,7 +261,6 @@ class APIClient:
         df_list = []
         sleepcount = 0
         while nextPage:
-            print(id_url + query_params)
             response_json = json.loads(self.httpGet(id_url + query_params).text)
             tmp_data = response_json['data']
             data = tmp_data['sites']
@@ -452,3 +443,5 @@ class APIClient:
         del policy_df['level_id']
         print(policy_df)
         return policy_df
+
+
