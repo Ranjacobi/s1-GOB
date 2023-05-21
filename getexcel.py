@@ -1,15 +1,15 @@
 import datetime
 import os
 import random
-
 import openpyxl
 import openpyxl.styles
 import pandas as pd
 from openpyxl import Workbook
 from openpyxl.styles import PatternFill
 from openpyxl.utils import get_column_letter
-from termcolor import colored
 from tqdm import tqdm
+import subprocess
+from tkinter import messagebox
 
 
 class ExcelProcessor:
@@ -24,15 +24,24 @@ class ExcelProcessor:
         for sheet in self.workbook.sheetnames[1:]:
             self.workbook.remove(self.workbook[sheet])
 
-        # Step 2: Importing all CSVs from the RawData folder
-        if not os.path.exists(self.csv_path):
-            print(colored(f"Error: {self.csv_path} folder not found. Please place the RawData folder where the S1-HealthCheck tool is located.", "red"))
+    # Step 2: Importing all CSVs from the RawData folder
+        raw_data_folder = os.path.expanduser("~/S1GOB/RawData")
+        if not os.path.exists(raw_data_folder):
+            try:
+                os.makedirs(raw_data_folder)
+                print("Success: Created 'RawData' folder.")
+            except OSError:
+                print("Error: Failed to create 'RawData' folder. Please check write permissions.")
+                exit()
+
+        if not os.access(raw_data_folder, os.W_OK):
+            print("Error: Insufficient permissions to write to 'RawData' folder.")
             exit()
 
-        csv_files = [os.path.join(self.csv_path, f) for f in os.listdir(self.csv_path) if f.endswith(".csv")]
+        csv_files = [os.path.join(raw_data_folder, f) for f in os.listdir(raw_data_folder) if f.endswith(".csv")]
 
         if len(csv_files) == 0:
-            print(colored(f"Error: {self.csv_path} folder is empty. Please add CSV files to the RawData folder.", "red"))
+            print("Error: 'RawData' folder is empty. Please add CSV files to the RawData folder.")
             exit()
         else:
             print("Success: starting to create the converted Excel file...")
@@ -57,15 +66,21 @@ class ExcelProcessor:
                     agent_ui_worksheet = self.workbook.create_sheet("agentUi")
                     agent_ui_worksheet.column_dimensions.group(start='A', end='A', hidden=True)
                     agent_ui_worksheet.append(["AGENT", "SCOPE"])
-                    for row in policies_worksheet.iter_rows(min_row=2, values_only=True):
-                        if row[46]:  # Column 47 holds the SCOPE
-                            scope = row[46].split("-")[-1]
-                        agent_ui_worksheet.append([row[21], scope])  # Column 22 holds the AGENT
+                    first_row = next(policies_worksheet.iter_rows(min_row=1, max_row=1, values_only=True))
+                    if "Scope" in first_row:  # Check if "Scope" is present in the first row
+                        scope_index = first_row.index("Scope")  # Get the index of "Scope"
+                        for row in policies_worksheet.iter_rows(min_row=2, values_only=True):
+                            if row[46]:  # Column 47 holds the SCOPE
+                                scope_value = str(row[46])  # Convert to string
+                                scope = scope_value.split("-")[-1]
+                            agent_ui_worksheet.append([row[21], row[scope_index]])  # Column 22 holds the AGENT
+                    else:
+                        print("Skipping to the next function as 'Scope' is not found in the first row.")
+                        return  # Skip to the next function or exit gracefully
                 policies_worksheet.sheet_state = "hidden"
             else:
-                print(colored(
-                    f"Error: policies worksheet not found. Please make sure the policies worksheet CSV is included in the RawData folder.",
-                    "red"))
+                print(
+                    "Error: policies worksheet not found. Please make sure the policies worksheet CSV is included in the RawData folder.")
                 exit()
 
         # Step 7: Adding additional sheets, copying over columns, hiding source, splitting columns
@@ -75,14 +90,46 @@ class ExcelProcessor:
             policies_worksheet = self.workbook["policies"]
             my_policies_worksheet = self.workbook["My_Policies"]
 
-            # Copying over columns
+            # Copying over columns except column A (clear column A)
             for row in policies_worksheet.iter_rows(min_row=1, max_row=1):
                 for cell in row:
-                    my_policies_worksheet[cell.coordinate].value = cell.value
+                    if cell.column != 1:  # Exclude column A
+                        my_policies_worksheet.cell(row=cell.row, column=cell.column).value = cell.value
+                    else:
+                        my_policies_worksheet.cell(row=cell.row, column=cell.column).value = None
 
             # Copying cell information
             for row in policies_worksheet.iter_rows(min_row=2, values_only=True):
+                row = list(row)
+                if len(row) >= 10:
+                    row[9] = row[9].split(",")[0] + "}"
                 my_policies_worksheet.append(row)
+
+            # Clearing column A in "My_Policies" worksheet
+            for cell in my_policies_worksheet['A']:
+                cell.value = None
+
+            # Copy the column if found to column 1 in 'my_policies_worksheet'
+            with tqdm(total=1, desc="'policies' sheet to 'my_policies_worksheet' sheet") as pbar:
+                found_scope = False
+                scope_column_index = None
+                start_row_index = 1
+
+                for row in policies_worksheet.iter_rows(values_only=True):
+                    if not found_scope:
+                        for i, cell in enumerate(row):
+                            if cell == "Scope":
+                                found_scope = True
+                                scope_column_index = i
+                                break
+
+                    if found_scope and scope_column_index is not None:
+                        my_policies_worksheet.cell(row=start_row_index, column=1, value=row[scope_column_index])
+                        my_policies_worksheet.cell(row=start_row_index, column=2,
+                                                   value=row[17])  # Assuming column R is index 17
+                        start_row_index += 1
+
+                pbar.update(1)
 
             # Hiding columns
             my_policies_worksheet.column_dimensions['D'].hidden = True  # Hide agentUi column D
@@ -90,6 +137,7 @@ class ExcelProcessor:
             my_policies_worksheet.column_dimensions['P'].hidden = True  # Hide engines column P
             my_policies_worksheet.column_dimensions['S'].hidden = True  # Hide iocAttributes column S
             my_policies_worksheet.column_dimensions['AA'].hidden = True  # Hide remoteScriptOrchestration column AA
+
 
             # Set the fill colors
             light_green = openpyxl.styles.PatternFill(start_color="98FB98", end_color="98FB98", fill_type="solid")
@@ -122,10 +170,22 @@ class ExcelProcessor:
         # Add new sheet policies_DV and copy columns 47 and 19
         policies_dv_sheet = self.workbook.create_sheet("policies_DV")
 
-        # Copy and transform data from 'policies' sheet to 'policies_DV' sheet
+        # Copy and transform data from 'policies' sheet to 'policies_DV' sheet (only if scope was found)
         with tqdm(total=1, desc="'policies' sheet to 'policies_dv' sheet") as pbar:
+            found_scope = False
+            scope_column_index = None
+
             for row in worksheet.iter_rows(min_row=1, values_only=True):
-                policies_dv_sheet.append([row[46], row[18]])
+                if not found_scope:
+                    for i, cell in enumerate(row):
+                        if cell == "Scope":
+                            found_scope = True
+                            scope_column_index = i
+                            break
+
+                if found_scope and scope_column_index is not None:
+                    policies_dv_sheet.append([row[scope_column_index], row[18]])
+
             pbar.update(1)
 
         # Hide column 19
@@ -134,16 +194,16 @@ class ExcelProcessor:
         # Step 1: Split text in column 2 using delimiter ","
         destination_col = []
 
-        for cell in tqdm(policies_dv_sheet["B"], desc="Splitting text..."):
-            if isinstance(cell.value, str):
-                destination_str = cell.value.strip("{}")  # Remove leading and trailing brackets
+        for row in policies_dv_sheet.iter_rows(min_row=1, min_col=2, max_col=2, values_only=True):
+            cell_value = row[0]
+            if isinstance(cell_value, str):
+                destination_str = cell_value.strip("{}")  # Remove leading and trailing brackets
                 destination_list = destination_str.split(",")
-                if len(destination_list) > 0:
-                    if destination_list[-1].strip() == "}":
-                        destination_list.pop()  # Remove last string from list
+                if len(destination_list) > 0 and destination_list[-1].strip() == "}":
+                    destination_list.pop()  # Remove last string from list
                 destination_col.append(destination_list)
             else:
-                destination_col.append([cell.value])
+                destination_col.append([cell_value])
 
         # Step 2: Overwrite column 2 with the split text
         for idx, values in enumerate(destination_col):
@@ -212,10 +272,22 @@ class ExcelProcessor:
         worksheet = self.workbook["policies"]
         policies_engines_worksheet = self.workbook.create_sheet("policies_engines")
 
-        # Copy and transform data from 'policies' sheet to 'policies_engines' sheet
-        with tqdm(total=1, desc="'policies' sheet to 'policies_engine' sheet") as pbar:
+        # Copy and transform data from 'policies' sheet to 'policies_DV' sheet (only if scope was found)
+        with tqdm(total=1, desc="'policies' sheet to 'policies_engines_worksheet' sheet") as pbar:
+            found_scope = False
+            scope_column_index = None
+
             for row in worksheet.iter_rows(min_row=1, values_only=True):
-                policies_engines_worksheet.append([row[46], row[19]])
+                if not found_scope:
+                    for i, cell in enumerate(row):
+                        if cell == "Scope":
+                            found_scope = True
+                            scope_column_index = i
+                            break
+
+                if found_scope and scope_column_index is not None:
+                    policies_engines_worksheet.append([row[scope_column_index], row[19]])
+
             pbar.update(1)
 
         # Step 1: Split text in column P using delimiter ","
@@ -322,7 +394,7 @@ class ExcelProcessor:
 
         # Step 4: Add color to the first row on each sheet and hiding column A
         # define sheets to include
-        sheets_to_include = ["agent_counts", "policies_DV", "policies_engines"]
+        sheets_to_include = ["agent_counts", "policies_DV", "policies_engines", "My_Policies"]
 
         # iterate through sheets and apply formatting
         for sheet_name in self.workbook.sheetnames:
@@ -340,7 +412,7 @@ class ExcelProcessor:
 
         # Hiding other sheets that we do not need
         with tqdm(total=3, desc="Hiding unnecessary sheets") as pbar:
-            for sheet_name in ["levels_accounts", "levels_sites", "levels", "agentUi", "levels_groups"]:
+            for sheet_name in ["levels_accounts", "levels_sites", "levels", "levels1", "levels2", "agentUi", "levels_groups"]:
                 try:
                     worksheet = self.workbook[sheet_name]
                 except KeyError:
@@ -351,7 +423,18 @@ class ExcelProcessor:
         # Save the workbook
         with tqdm(total=1, desc="Final step! Saving the workbook") as pbar:
             filename = datetime.datetime.now().strftime("Health_Check_%d-%m-%Y_{}.xlsx".format(random.randint(0, 999)))
-            self.workbook.save(filename)
+            s1gob_folder = os.path.expanduser("~/S1GOB")
+            if not os.path.exists(s1gob_folder):
+                os.makedirs(s1gob_folder)
+            file_path = os.path.join(s1gob_folder, filename)
+            self.workbook.save(file_path)
             pbar.update(1)
 
-        print("Your New Excel File is ready:", filename)
+        print("Your New Excel File is ready:", file_path)
+
+        # Prompt the user with a message box
+        response = messagebox.askquestion("File Created",
+                                          f"Do you want to open the new file?\n\nFile name: {file_path}")
+        if response == 'yes':
+            # Open the file using the default application
+            subprocess.run(['open', file_path])
