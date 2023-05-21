@@ -461,6 +461,22 @@ class ExcelProcessor:
             except KeyError:
                 pass
 
+            # All the rest
+            try:
+                sheet = self.workbook["users"]
+                sheet.title = "Users Information"
+                sheet = self.workbook["agent_counts"]
+                sheet.title = "Agents Count"
+                sheet = self.workbook["exclusions"]
+                sheet.title = "Exclusions Information"
+                sheet = self.workbook["agents"]
+                sheet.title = "Active Directory Information"
+            except KeyError:
+                pass
+
+
+
+
         # Save the workbook
         with tqdm(total=1, desc="Final step! Saving the workbook") as pbar:
             filename = datetime.datetime.now().strftime("Health_Check_%d-%m-%Y_{}.xlsx".format(random.randint(0, 999)))
