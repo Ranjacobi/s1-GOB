@@ -10,7 +10,7 @@ from openpyxl.utils import get_column_letter
 from tqdm import tqdm
 import subprocess
 from tkinter import messagebox
-
+from openpyxl.styles import Border, Side, PatternFill, Font
 
 class ExcelProcessor:
     def __init__(self, csv_path):
@@ -401,10 +401,21 @@ class ExcelProcessor:
             worksheet = self.workbook[sheet_name]
 
             # set color for first row
-            fill = openpyxl.styles.PatternFill(start_color='4916ad', end_color='4916ad', fill_type='solid')
+            fill = PatternFill(start_color='4916ad', end_color='4916ad', fill_type='solid')
             for cell in worksheet[1]:
                 cell.fill = fill
-                cell.font = openpyxl.styles.Font(color='FFFFFF')
+                cell.font = Font(color='FFFFFF')
+
+            # apply borders to the table
+            rows = list(worksheet.rows)
+            num_rows = len(rows)
+            num_cols = len(rows[0])
+            border_style = Side(border_style='thin', color='000000')
+            border = Border(top=border_style, bottom=border_style, left=border_style, right=border_style)
+
+            for row in rows:
+                for cell in row:
+                    cell.border = border
 
             # hide column A if not included
             if sheet_name not in sheets_to_include:
@@ -412,13 +423,43 @@ class ExcelProcessor:
 
         # Hiding other sheets that we do not need
         with tqdm(total=3, desc="Hiding unnecessary sheets") as pbar:
-            for sheet_name in ["levels_accounts", "levels_sites", "levels", "levels1", "levels2", "agentUi", "levels_groups"]:
+            for sheet_name in ["levels_accounts", "levels_sites", "levels", "levels1", "levels2", "agentUi", "MAIN",
+                               "levels_groups"]:
                 try:
                     worksheet = self.workbook[sheet_name]
                 except KeyError:
                     continue
                 worksheet.sheet_state = "hidden"
                 pbar.update(1)
+
+        # Moving and renaming sheets
+        with tqdm(total=3, desc="Moving and renaming sheets") as pbar:
+            # First sheet
+            try:
+                sheet = self.workbook["policies_engines"]
+                sheet.title = "Engines"
+                self.workbook._sheets = [sheet] + [s for s in self.workbook._sheets if s != sheet]
+                pbar.update(1)
+            except KeyError:
+                pass
+
+            # Second sheet
+            try:
+                sheet = self.workbook["policies_DV"]
+                sheet.title = "Deep Visibility"
+                self.workbook._sheets = [sheet] + [s for s in self.workbook._sheets if s != sheet]
+                pbar.update(1)
+            except KeyError:
+                pass
+
+            # Third sheet
+            try:
+                sheet = self.workbook["My_Policies"]
+                sheet.title = "Policy Export"
+                self.workbook._sheets = [sheet] + [s for s in self.workbook._sheets if s != sheet]
+                pbar.update(1)
+            except KeyError:
+                pass
 
         # Save the workbook
         with tqdm(total=1, desc="Final step! Saving the workbook") as pbar:
