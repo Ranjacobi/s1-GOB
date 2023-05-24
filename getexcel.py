@@ -5,12 +5,13 @@ import openpyxl
 import openpyxl.styles
 import pandas as pd
 from openpyxl import Workbook
-from openpyxl.styles import PatternFill
 from openpyxl.utils import get_column_letter
 from tqdm import tqdm
 import subprocess
 from tkinter import messagebox
 from openpyxl.styles import Border, Side, PatternFill, Font
+import time
+
 
 class ExcelProcessor:
     def __init__(self, csv_path):
@@ -58,6 +59,9 @@ class ExcelProcessor:
             pbar.update(1)
         pbar.close()
 
+        # Wait for 2 seconds
+        time.sleep(2)
+
         # Step 7: Adding additional sheets, copying over columns, hiding source, splitting columns
         with tqdm(total=1, desc="Processing policies sheet") as pbar:
             if "policies" in self.workbook.sheetnames:
@@ -101,7 +105,7 @@ class ExcelProcessor:
             # Copying cell information
             for row in policies_worksheet.iter_rows(min_row=2, values_only=True):
                 row = list(row)
-                if len(row) >= 10:
+                if len(row) >= 10 and isinstance(row[9], str):
                     row[9] = row[9].split(",")[0] + "}"
                 my_policies_worksheet.append(row)
 
@@ -130,6 +134,9 @@ class ExcelProcessor:
                         start_row_index += 1
 
                 pbar.update(1)
+
+            # Wait for 2 seconds
+            time.sleep(2)
 
             # Hiding columns
             my_policies_worksheet.column_dimensions['D'].hidden = True  # Hide agentUi column D
@@ -164,6 +171,10 @@ class ExcelProcessor:
                             cell.font = dark_red  # Set font color to Dark Red
                 pbar.update(1)
 
+
+        # Wait for 2 seconds
+        time.sleep(2)
+
         # Select worksheet
         worksheet = self.workbook["My_Policies"]
 
@@ -187,6 +198,9 @@ class ExcelProcessor:
                     policies_dv_sheet.append([row[scope_column_index], row[18]])
 
             pbar.update(1)
+
+            # Wait for 2 seconds
+            time.sleep(2)
 
         # Hide column 19
         policies_dv_sheet.column_dimensions[get_column_letter(2)].hidden = True
@@ -259,6 +273,9 @@ class ExcelProcessor:
             policies_dv_sheet["S1"] = "URL"
             pbar.update(1)
 
+            # Wait for 2 seconds
+            time.sleep(2)
+
         # Step 10: Add color to the first row on each sheet
         with tqdm(total=1, desc="Add color to the first row on each sheet") as pbar:
             fill = PatternFill(start_color='4916ad', end_color='4916ad', fill_type='solid')
@@ -267,6 +284,9 @@ class ExcelProcessor:
                 for cell in worksheet["1"]:
                     cell.fill = fill
             pbar.update(1)
+
+            # Wait for 2 seconds
+            time.sleep(2)
 
         # Create new worksheet policies_engines from policies worksheet
         worksheet = self.workbook["policies"]
@@ -289,6 +309,9 @@ class ExcelProcessor:
                     policies_engines_worksheet.append([row[scope_column_index], row[19]])
 
             pbar.update(1)
+
+            # Wait for 2 seconds
+            time.sleep(2)
 
         # Step 1: Split text in column P using delimiter ","
         destination_col = []
@@ -337,6 +360,9 @@ class ExcelProcessor:
             policies_engines_worksheet.auto_filter.ref = "A1:L1"
             pbar.update(1)
 
+            # Wait for 2 seconds
+            time.sleep(2)
+
         # Step 13: Add color to the first row on each sheet:
         with tqdm(total=1, desc="Add color to the first row on each sheet") as pbar:
             for sheet in self.workbook:
@@ -344,6 +370,9 @@ class ExcelProcessor:
                     if cell.value:
                         cell.fill = PatternFill(start_color='4916ad', end_color='4916ad', fill_type='solid')
             pbar.update(1)
+
+            # Wait for 2 seconds
+            time.sleep(2)
 
         # Step 6: Adding autofilter and autofit to sheets after creation
         with tqdm(total=len(self.workbook.sheetnames), desc="Adding autofilter and autofit workbook") as pbar:
@@ -363,6 +392,9 @@ class ExcelProcessor:
                     adjusted_width = (max_length + 2)
                     worksheet.column_dimensions[column_name].width = adjusted_width
                 pbar.update(1)
+
+            # Wait for 2 seconds
+            time.sleep(2)
 
         # remoteScriptOrchestration - Sheet will be hidden
         worksheet_rso = self.workbook.create_sheet("policies_RSO")
@@ -421,8 +453,11 @@ class ExcelProcessor:
             if sheet_name not in sheets_to_include:
                 worksheet.column_dimensions.group(start='A', end='A', hidden=True)
 
+        # Wait for 2 seconds
+        time.sleep(2)
+
         # Hiding other sheets that we do not need
-        with tqdm(total=3, desc="Hiding unnecessary sheets") as pbar:
+        with tqdm(total=1, desc="Hiding unnecessary sheets") as pbar:
             for sheet_name in ["levels_accounts", "levels_sites", "levels", "levels1", "levels2", "agentUi", "MAIN",
                                "levels_groups"]:
                 try:
@@ -431,6 +466,9 @@ class ExcelProcessor:
                     continue
                 worksheet.sheet_state = "hidden"
                 pbar.update(1)
+
+        # Wait for 2 seconds
+        time.sleep(2)
 
         # Moving and renaming sheets
         with tqdm(total=3, desc="Moving and renaming sheets") as pbar:
@@ -473,11 +511,12 @@ class ExcelProcessor:
                 sheet.title = "Active Directory Information"
             except KeyError:
                 pass
+        pbar.update(1)
 
+        # Wait for 2 seconds
+        time.sleep(2)
 
-
-
-        # Save the workbook
+        # Final step! Saving the workbook
         with tqdm(total=1, desc="Final step! Saving the workbook") as pbar:
             filename = datetime.datetime.now().strftime("Health_Check_%d-%m-%Y_{}.xlsx".format(random.randint(0, 999)))
             s1gob_folder = os.path.expanduser("~/S1GOB")
@@ -487,11 +526,17 @@ class ExcelProcessor:
             self.workbook.save(file_path)
             pbar.update(1)
 
-        print("Your New Excel File is ready:", file_path)
+        # Wait for 2 seconds
+        time.sleep(2)
+
+        print("\n\nYour New Excel File is ready:", file_path)
+
+        # Wait for 2 seconds
+        time.sleep(2)
 
         # Prompt the user with a message box
-        response = messagebox.askquestion("File Created",
-                                          f"Do you want to open the new file?\n\nFile name: {file_path}")
+        response = messagebox.askquestion("\n\nFile Created",
+                                          f"Do you want to open the new file?\n\n\nFile name: {file_path}")
         if response == 'yes':
             # Open the file using the default application
             subprocess.run(['open', file_path])
