@@ -1,3 +1,5 @@
+import threading
+
 import pandas as pd
 import requests
 import json
@@ -27,43 +29,54 @@ class APIClient:
         sleepcount = 0
         total_left = 0
         total_items = 0
+        request_count = 0
 
         response_json = json.loads(self.httpGet(endpoint + query_params).text)
         pagination = response_json['pagination']
         total_items = pagination['totalItems']
 
+        print(f"\nFetching data from {endpoint}:")
         while nextPage:
-            response_json = json.loads(self.httpGet(endpoint + query_params).text)
-            data = response_json['data']
-            df_list.append(pd.DataFrame.from_records(data))
-            pagination = response_json['pagination']
-            if FirstRun:
-                total_left = pagination['totalItems']
-                FirstRun = False
             try:
-                cursor = pagination['nextCursor']
-            except:
-                cursor = None
-            if cursor:
-                query_params = "?limit=100&cursor=" + cursor
-            else:
-                nextPage = False
+                response_json = json.loads(self.httpGet(endpoint + query_params).text)
+                data = response_json['data']
+                df_list.append(pd.DataFrame.from_records(data))
+                pagination = response_json['pagination']
+                if FirstRun:
+                    total_left = pagination['totalItems']
+                    FirstRun = False
+                try:
+                    cursor = pagination['nextCursor']
+                except:
+                    cursor = None
+                if cursor:
+                    query_params = "?limit=100&cursor=" + cursor
+                else:
+                    nextPage = False
 
-            total_left -= 100
-            if total_left < 0:
-                total_left = 0
+                total_left -= 100
+                if total_left < 0:
+                    total_left = 0
 
-            progress = (total_items - total_left) / total_items
-            progress_bar = "#" * int(progress * 20) + "-" * (20 - int(progress * 20))
-            print(f"\nFetching data from {endpoint}:")
-            print(f"Progress: [{progress_bar}] {int(progress * 100)}%")
+                progress = (total_items - total_left) / total_items
+                progress_bar = "#" * int(progress * 20) + "-" * (20 - int(progress * 20))
+                print(f"Progress: [{progress_bar}] {int(progress * 100)}%")
 
-            sleepcount += 1
-            if sleepcount >= 5:
-                time.sleep(1)
-                sleepcount = 0
+                sleepcount += 1
+                if sleepcount >= 5:
+                    time.sleep(1)
+                    sleepcount = 0
+
+                request_count += 1
+
+            except Exception as e:
+                print(f"An error occurred: {e}")
+                break
 
         raw_df = pd.concat(df_list)
+        print("Data fetching completed.")
+        print(f"Total requests made: {request_count}")
+        print(f"Total data records fetched: {len(raw_df)}")
         return raw_df
 
     def httpGetPaginationIds(self, endpoint, level, level_id_df):
