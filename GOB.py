@@ -2,6 +2,7 @@
 # V1.5
 import shutil
 import subprocess
+import time
 import tkinter as tk
 import threading
 from tkinter import ttk, messagebox
@@ -12,6 +13,7 @@ from datetime import datetime
 import sys
 from tkinter import *
 from tkmacosx import Button
+
 
 class TextRedirector:
     def __init__(self, widget, tag="stdout"):
@@ -27,9 +29,25 @@ class TextRedirector:
 class GUIInput:
     def __init__(self):
         # Create GUI
+        self.token_history = []
+        self.domain_history = []
+        self.user_history = []
         self.process_rawdata = None
         self.root = tk.Tk()
         self.root.title("S1-GOB: Guided On Boarding")
+
+        # Function to open GUI in the middle of the screen
+        def open_gui_centered():
+            window_width = 600
+            window_height = 700
+            screen_width = self.root.winfo_screenwidth()
+            screen_height = self.root.winfo_screenheight()
+            x = int((screen_width / 2) - (window_width / 2))
+            y = int((screen_height / 2) - (window_height / 2))
+            self.root.geometry(f"{window_width}x{window_height}+{x}+{y}")
+
+        # Call the function to open the GUI window centered
+        open_gui_centered()
 
         self.progress_window = None  # Initialize progress_window attribute
         self.cancel_button = None
@@ -40,7 +58,8 @@ class GUIInput:
 
         # Create a custom style for the tabs
         style = ttk.Style()
-        style.configure('TNotebook.Tab', padding=(30, 10))
+        style.configure('TNotebook.Tab', padding=(35, 10))
+        style.map('TNotebook.Tab', background=[('selected', 'purple')])
 
         # Create tab for S1-HealthCheck tool
         self.tab1 = ttk.Frame(self.notebook)
@@ -50,33 +69,71 @@ class GUIInput:
         style = ttk.Style()
         style.configure('Purple.TButton', background='purple', foreground='black')
 
-        # Create a custom style for the button
-        style = ttk.Style()
-        style.configure('Purple.TButton', background='purple', foreground='black')
-
         # Create the "About" button using tkmacosx:
         about_button = Button(self.tab1, command=self.about, text="About", bg='purple', fg='black')
         about_button.pack(side=tk.TOP, padx=10, pady=10)
 
-        # Create balloon help for the API Token entry box
+        # Create tooltip for the API Token entry box
         self.token_label = ttk.Label(self.tab1, text="API Token:")
         self.token_label.pack(padx=10, pady=2)
         self.token_entry = ttk.Entry(self.tab1)
         self.token_entry.pack(padx=10, pady=2)
         self.token_entry.insert(0, "")
+        self.add_tooltip(self.token_entry,
+                         "Enter your API token obtained from the console (User or Service User token)")
 
-        # Create balloon help for the Domain entry box
+        # Create tooltip for the Domain entry box
         self.domain_label = ttk.Label(self.tab1, text="Domain:")
         self.domain_label.pack(padx=10, pady=2)
         self.domain_entry = ttk.Entry(self.tab1)
         self.domain_entry.pack(padx=10, pady=2)
         self.domain_entry.insert(0, "")
+        self.add_tooltip(self.domain_entry,
+                         "Enter the domain name that ends with '.sentinelone.net'")
 
-        # Create balloon help for the User entry box
+        # Create tooltip for the User entry box
         self.user_label = ttk.Label(self.tab1, text="User: (Optional)")
         self.user_label.pack(padx=10, pady=2)
-        self.user_entry = ttk.Entry(self.tab1)
+        self.user_entry = ttk.Combobox(self.tab1)
         self.user_entry.pack(padx=10, pady=2)
+        self.add_tooltip(self.user_entry, "Enter your user email. This field optional")
+
+        # Load the previously selected value from storage or set a default value
+        def load_previous_user():
+            # Implement the code to load the previously selected user from storage
+            # For example, if using a file-based storage:
+            try:
+                with open('user_history.txt', 'r') as file:
+                    user = file.read().strip()
+                    return user
+            except FileNotFoundError:
+                return ""
+
+        previous_user = load_previous_user()
+
+        previous_user = load_previous_user()
+        if previous_user in self.user_history:
+            self.user_entry.set(previous_user)
+        else:
+            self.user_entry.set("")
+
+        # Update the user history list when a new value is selected
+        def update_selected_user(event):
+            selected_user = self.user_entry.get()
+            if selected_user not in self.user_history:
+                self.user_history.append(selected_user)
+            save_user_history(self.user_history)
+
+        # Save the user history list to storage
+        def save_user_history(history):
+            # Implement the code to save the user history to storage
+            pass
+
+        # Bind the event to update the selected value and user history
+        self.user_entry.bind("<<ComboboxSelected>>", update_selected_user)
+
+        # Set the values for the user history dropdown
+        self.user_entry['values'] = self.user_history
 
         # Create the "Start" button using tkmacosx:
         self.create_start_button = Button(self.tab1, text="Start", bg='green', fg='white', font=('Helvetica', 15),
@@ -123,7 +180,8 @@ class GUIInput:
             self.listbox.insert(tk.END, "The 'RawData' folder does not exist.")
 
         # Create the "create_excel_file" button using tkmacosx:
-        create_excel_button = Button(self.tab2, text="Create Excel File", bg='green', fg='white', font=('Helvetica', 15),
+        create_excel_button = Button(self.tab2, text="Create Excel File", bg='green', fg='white',
+                                     font=('Helvetica', 15),
                                      borderless=1, command=self.create_excel_file)
         create_excel_button.pack(padx=20, pady=20)
 
@@ -140,8 +198,9 @@ class GUIInput:
 
     # Define the "About" function
     def about(self):
-            # Create a message box with information about the application
-            messagebox.showinfo("About S1-GOB", "SS1-GOB is a tool that provides comprehensive health checks for customer's SentinelOne environment, enabling you to identify and present issues to your customer quickly and efficiently.\n\nVersion: 1.5.0\n\nCopyright 2023, Ran Jacobi")
+        # Create a message box with information about the application
+        messagebox.showinfo("About S1-GOB",
+                            "SS1-GOB is a tool that provides comprehensive health checks for customer's SentinelOne environment, enabling you to identify and present issues to your customer quickly and efficiently.\n\nVersion: 1.5.0\n\nCopyright 2023, Ran Jacobi")
 
     def refresh(self):
         # Clear listbox
@@ -188,6 +247,17 @@ class GUIInput:
         self.progress_window = None
         self.cancel_button = None
 
+    def run_excel_processor(self):
+        # Create an ExcelProcessor object and process the CSV files
+        self.excel_processor = ExcelProcessor("RawData")
+        self.excel_processor.process_csv_files()
+
+        # Destroy the progress window and reset the instance variables
+        if self.progress_window:
+            self.progress_window.destroy()
+        self.progress_window = None
+        self.cancel_button = None
+
     def start_script(self):
         self.create_start_button.config(state=DISABLED)  # Disable the button after it is clicked
         self.token = self.token_entry.get()
@@ -201,13 +271,18 @@ class GUIInput:
             return
 
         # Create progress bar
-        progress_bar = ttk.Progressbar(self.root, mode='indeterminate')
-        progress_bar.pack(fill='x', padx=10, pady=10)
+        progress_bar = ttk.Progressbar(self.root, orient="horizontal", mode="indeterminate", length=200)
+        progress_bar.pack(fill="x", padx=10, pady=10)
         progress_bar.start()
 
         # Start the script in a separate thread
         script_thread = threading.Thread(target=self.run_script, args=(progress_bar,))
         script_thread.start()
+
+    def add_tooltip(self, widget, text):
+        tooltip = ToolTip(widget, text)
+        widget.bind("<Enter>", tooltip.show_tooltip)
+        widget.bind("<Leave>", tooltip.hide_tooltip)
 
     def run_script(self, progress_bar):
         # Get token, domain and user
@@ -236,8 +311,7 @@ class GUIInput:
             users_df = my_object.httpGetPagination("/web/api/v2.1/users")
             exclusions_df = my_object.getAllLevels("/web/api/v2.1/exclusions", level_account_df, level_site_df,
                                                    level_group_df)
-            print(exclusions_df.columns.values.tolist())
-            print(exclusions_df)
+            print("\n\nStarting to Group Items...")
 
         except KeyError as e:
             print("An error occurred: Data key not found. Please check your input.")
@@ -316,7 +390,10 @@ class GUIInput:
                 shutil.move(file_path, new_folder_path)
 
             # Move the new folder one level below S1GOB
-            shutil.move(new_folder_path, s1gob_folder)
+            try:
+                shutil.move(new_folder_path, s1gob_folder)
+            except shutil.Error as e:
+                print(f"Error moving '{new_folder_path}': {str(e)}")
 
         # Move all CSV files from the user's home directory to RawData folder
         user_home_directory = os.path.expanduser("~")
@@ -337,19 +414,38 @@ class GUIInput:
             for file in failed_files:
                 print(file)
 
-        print("\n\n\n\n\n\n\n\n\n\n\n\n\n\n")
-        print("Agents DF:\n", agents_df)
-        print("Agents Summary:\n", agent_counts)
-        print("Users DF:\n", users_df)
-        print("Policy DF:\n", policy_df)
-        # print("Installed Apps\n",installed_apps_df)
-        print("Exclusions DF:\n", exclusions_df)
+        print("\n\n")
         print("The Script is Done! The RawData folder is ready")
+        print("\n")
         print("Location of RawData folder:", os.path.abspath(raw_data_folder))
-        if progress_bar is not None:
-            progress_bar.close()
-            progress_bar.clear()
-            self.create_start_button.config(state=NORMAL)
+        self.create_start_button.config(state=NORMAL)
+
+class ToolTip:
+    def __init__(self, widget, text):
+        self.widget = widget
+        self.text = text
+        self.tooltip = None
+
+    def show_tooltip(self, event):
+        x, y, _, _ = event.widget.bbox("insert")
+        x += event.widget.winfo_rootx() - 65  # Adjust the x-coordinate to display to the left of the widget
+        y += event.widget.winfo_rooty() - 25  # Adjust the y-coordinate to display above the widget
+
+        self.tooltip = tk.Toplevel(event.widget)
+        self.tooltip.wm_overrideredirect(True)
+        self.tooltip.wm_geometry(f"+{x}+{y}")
+
+        self.tooltip.configure(background="#9b59b6")  # Set the background color to purple
+
+        if sys.platform == "darwin":
+            self.tooltip.attributes("-type", "tooltip")  # Set the window type to tooltip on macOS
+
+        label = ttk.Label(self.tooltip, text=self.text, background="#9b59b6", foreground="#ffffff", relief="solid",
+                          borderwidth=1)
+        label.pack()
+    def hide_tooltip(self, event):
+        if self.tooltip:
+            self.tooltip.destroy()
 
 gui = GUIInput()
 gui.root.mainloop()
