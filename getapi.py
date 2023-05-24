@@ -25,9 +25,15 @@ class APIClient:
         df_list = []
         FirstRun = True
         sleepcount = 0
-        while nextPage:
+        total_left = 0
+        total_items = 0
 
-            response_json = json.loads(self.httpGet(endpoint+query_params).text)
+        response_json = json.loads(self.httpGet(endpoint + query_params).text)
+        pagination = response_json['pagination']
+        total_items = pagination['totalItems']
+
+        while nextPage:
+            response_json = json.loads(self.httpGet(endpoint + query_params).text)
             data = response_json['data']
             df_list.append(pd.DataFrame.from_records(data))
             pagination = response_json['pagination']
@@ -47,13 +53,17 @@ class APIClient:
             if total_left < 0:
                 total_left = 0
 
+            progress = (total_items - total_left) / total_items
+            progress_bar = "#" * int(progress * 20) + "-" * (20 - int(progress * 20))
+            print(f"\nFetching data from {endpoint}:")
+            print(f"Progress: [{progress_bar}] {int(progress * 100)}%")
+
             sleepcount += 1
             if sleepcount >= 5:
                 time.sleep(1)
                 sleepcount = 0
-            print("Items Remaining: ",total_left)
+
         raw_df = pd.concat(df_list)
-        print(endpoint+"\n", raw_df)
         return raw_df
 
     def httpGetPaginationIds(self, endpoint, level, level_id_df):
@@ -68,69 +78,19 @@ class APIClient:
 
         df_list = []
 
-
-
         for level_id in level_id_df["id"].to_list():
             query_params_base = "?limit=100" + "&" + param + "=" + level_id
             query_params = "?limit=100" + "&" + param + "=" + level_id
             nextPage = True
-
             FirstRun = True
             sleepcount = 0
-            while nextPage:
-                response_json = json.loads(self.httpGet(endpoint + query_params).text)
-                data = response_json['data']
-                dataframe_tmp = pd.DataFrame.from_records(data)
-                dataframe_tmp["level"] = level
-                dataframe_tmp["level_id"] = level_id
-                df_list.append(dataframe_tmp)
-                pagination = response_json['pagination']
-                if FirstRun:
-                    total_left = pagination['totalItems']
-                    FirstRun = False
-                try:
-                    cursor = pagination['nextCursor']
-                except:
-                    cursor = None
-                if cursor:
-                    query_params = query_params_base + "&cursor=" + cursor
-                else:
-                    nextPage = False
+            total_left = 0
+            total_items = 0
 
-                total_left -= 100
-                if total_left < 0:
-                    total_left = 0
-                sleepcount += 1
-                if sleepcount >= 5:
-                    time.sleep(1)
-                    sleepcount = 0
-                print("Items Remaining: ", total_left)
+            response_json = json.loads(self.httpGet(endpoint + query_params).text)
+            pagination = response_json['pagination']
+            total_items = pagination['totalItems']
 
-        raw_df = pd.concat(df_list)
-        print(endpoint + "\n", raw_df)
-        return raw_df
-
-    def httpGetPaginationIds(self, endpoint, level, level_id_df):
-        param = "siteIds"
-
-        if level == "accounts":
-            param = "accountIds"
-        elif level == "sites":
-            param = "siteIds"
-        elif level == "groups":
-            param = "groupIds"
-
-        df_list = []
-
-
-
-        for level_id in level_id_df["id"].to_list():
-            query_params_base = "?limit=100" + "&" + param + "=" + level_id
-            query_params = "?limit=100" + "&" + param + "=" + level_id
-            nextPage = True
-
-            FirstRun = True
-            sleepcount = 0
             while nextPage:
                 response_json = json.loads(self.httpGet(endpoint + query_params).text)
                 data = response_json['data']
@@ -159,7 +119,11 @@ class APIClient:
                 if sleepcount >= 5:
                     time.sleep(1)
                     sleepcount = 0
-                print("Items Remaining: ", total_left)
+
+                progress = (total_items - total_left) / total_items
+                progress_bar = "#" * int(progress * 20) + "-" * (20 - int(progress * 20))
+                print(f"Progress: [{progress_bar}] {int(progress * 100)}%")
+
         raw_df = pd.concat(df_list)
         try:
             tmp_policy_df = pd.merge(raw_df, self.level_df, how='left', left_on='level_id', right_on='id')
@@ -167,7 +131,72 @@ class APIClient:
         except:
             print("GlobalPolicy")
 
-        print(endpoint + "\n", raw_df)
+        return raw_df
+
+    def httpGetPaginationIds(self, endpoint, level, level_id_df):
+        param = "siteIds"
+
+        if level == "accounts":
+            param = "accountIds"
+        elif level == "sites":
+            param = "siteIds"
+        elif level == "groups":
+            param = "groupIds"
+
+        df_list = []
+        total_items = len(level_id_df["id"].to_list())
+        processed_items = 0
+
+        for level_id in level_id_df["id"].to_list():
+            query_params_base = "?limit=100" + "&" + param + "=" + level_id
+            query_params = "?limit=100" + "&" + param + "=" + level_id
+            nextPage = True
+
+            FirstRun = True
+            sleepcount = 0
+            total_left = 0
+
+            while nextPage:
+                response_json = json.loads(self.httpGet(endpoint + query_params).text)
+                data = response_json['data']
+                dataframe_tmp = pd.DataFrame.from_records(data)
+                dataframe_tmp["level"] = level
+                dataframe_tmp["level_id"] = level_id
+                df_list.append(dataframe_tmp)
+                pagination = response_json['pagination']
+                if FirstRun:
+                    total_left = pagination['totalItems']
+                    FirstRun = False
+                try:
+                    cursor = pagination['nextCursor']
+                except:
+                    cursor = None
+                if cursor:
+                    query_params = query_params_base + "&cursor=" + cursor
+                else:
+                    nextPage = False
+
+                total_left -= 100
+                if total_left < 0:
+                    total_left = 0
+
+                sleepcount += 1
+                if sleepcount >= 5:
+                    time.sleep(1)
+                    sleepcount = 0
+
+                processed_items += 1
+                progress = processed_items / total_items
+                progress_bar = "#" * int(progress * 20) + "-" * (20 - int(progress * 20))
+                print(f"Progress: [{progress_bar}] {int(progress * 100)}%")
+
+        raw_df = pd.concat(df_list)
+        try:
+            tmp_policy_df = pd.merge(raw_df, self.level_df, how='left', left_on='level_id', right_on='id')
+            raw_df = tmp_policy_df
+        except:
+            print("GlobalPolicy")
+
         return raw_df
 
     def getGlobalPolicies(self):
@@ -187,7 +216,6 @@ class APIClient:
             data['fw_inherits'] = fw_data['inherits']
             data['fw_inheritSettings'] = fw_data['inheritSettings']
             data['fw_locationAware'] = fw_data['locationAware']
-            # data['fw_reportBlocked'] = fw_data['reportBlocked']
             data['fw_selectedTags'] = fw_data['selectedTags']
         else:
             data['fw_enabled'] = None
@@ -196,7 +224,6 @@ class APIClient:
             data['fw_inherits'] = None
             data['fw_inheritSettings'] = None
             data['fw_locationAware'] = None
-            # data['fw_reportBlocked'] = None
             data['fw_selectedTags'] = None
 
         response_dc = self.httpGet("/web/api/v2.1/device-control/configuration")
@@ -224,6 +251,14 @@ class APIClient:
 
         tmp_global_list.append(data)
         data_df = pd.DataFrame.from_records(tmp_global_list)
+
+        total_items = 1
+        processed_items = 1
+
+        progress = processed_items / total_items
+        progress_bar = "#" * int(progress * 20) + "-" * (20 - int(progress * 20))
+        print(f"Progress: [{progress_bar}] {int(progress * 100)}%")
+
         return data_df
 
     def createLevelsDF(self):
@@ -314,9 +349,19 @@ class APIClient:
         new_account_df = new_account_df.rename(columns={"name": "Scope"})
         print("NewAccountDF\n", new_account_df)
 
+        total_items = 3  # Total number of dataframes being processed
+        processed_items = 3  # Number of dataframes already processed
+
+        progress = processed_items / total_items
+        progress_bar = "#" * int(progress * 20) + "-" * (20 - int(progress * 20))
+        print(f"Progress: [{progress_bar}] {int(progress * 100)}%")
+
         return new_account_df, new_site_df, new_group_df
 
     # Levels = accounts, sites, groups
+    import json
+    import pandas as pd
+
     def getPolicies(self, level, level_df):
         if level == "accounts":
             id_url = "/web/api/v2.1/accounts"
@@ -340,11 +385,13 @@ class APIClient:
 
             level_id_list = level_df['id'].to_list()
             policy_df_list = []
-            iterations_length = len(level_id_list)
-            print(iterations_length)
+            total_iterations = len(level_id_list)
+            current_iteration = 0
+
+            print(f"\nFetching {level} Policies:")
             for level_id in level_id_list:
+                current_iteration += 1
                 policies_url = id_url + "/" + str(level_id) + "/policy"
-                print(policies_url)
                 response = self.httpGet(policies_url)
                 if response.status_code == 200:
                     response_json = json.loads(response.text)
@@ -361,7 +408,6 @@ class APIClient:
                         data['fw_inherits'] = fw_data['inherits']
                         data['fw_inheritSettings'] = fw_data['inheritSettings']
                         data['fw_locationAware'] = fw_data['locationAware']
-                        # data['fw_reportBlocked'] = fw_data['reportBlocked']
                         data['fw_selectedTags'] = fw_data['selectedTags']
                     else:
                         data['fw_enabled'] = None
@@ -370,7 +416,6 @@ class APIClient:
                         data['fw_inherits'] = None
                         data['fw_inheritSettings'] = None
                         data['fw_locationAware'] = None
-                        # data['fw_reportBlocked'] = None
                         data['fw_selectedTags'] = None
 
                     response_dc = self.httpGet("/web/api/v2.1/device-control/configuration" + fwparam)
@@ -402,20 +447,21 @@ class APIClient:
                     print(policies_url)
                     print(response.text)
 
-                iterations_length -= 1
-                print(level + " Policies left: " + str(iterations_length))
+                # Update progress bar
+                progress = current_iteration / total_iterations * 100
+                progress_bar = "#" * int(progress * 0.2) + "-" * (20 - int(progress * 0.2))
+                print(f"Progress: [{progress_bar}] {progress:.2f}%")
+
             policy_df = pd.DataFrame.from_records(policy_df_list)
 
         policy_df['level'] = level
         try:
             tmp_policy_df = pd.merge(policy_df, level_df, how='left', left_on='level_id', right_on='id')
-            print(tmp_policy_df)
             policy_df = tmp_policy_df
         except:
             print("GlobalPolicy")
 
-        print("Policy DF " + level + ": ")
-        print(policy_df)
+        print("\nPolicy DF " + level + ":")
         return policy_df
 
     def getAllPolicies(self, level_account_df, level_site_df, level_group_df):
@@ -427,8 +473,6 @@ class APIClient:
 
         policy_df = pd.concat(policy_frames)
         del policy_df['level_id']
-        print(policy_df)
-
         return (policy_df)
 
     def getAllLevels(self, ep, level_account_df, level_site_df, level_group_df):
@@ -441,7 +485,4 @@ class APIClient:
 
         policy_df = pd.concat(policy_frames)
         del policy_df['level_id']
-        print(policy_df)
         return policy_df
-
-
