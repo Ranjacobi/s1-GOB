@@ -1,10 +1,8 @@
 #S1-GOB was created by Ran Jacobi, 2023.
-# V1.5
+# V1.7
 import shutil
 import subprocess
-import time
 import tkinter as tk
-import threading
 from tkinter import ttk, messagebox
 from getapi import APIClient
 from getexcel import ExcelProcessor
@@ -13,6 +11,9 @@ from datetime import datetime
 import sys
 from tkinter import *
 from tkmacosx import Button
+from tkinter import messagebox
+import threading
+
 
 
 class TextRedirector:
@@ -29,9 +30,6 @@ class TextRedirector:
 class GUIInput:
     def __init__(self):
         # Create GUI
-        self.token_history = []
-        self.domain_history = []
-        self.user_history = []
         self.process_rawdata = None
         self.root = tk.Tk()
         self.root.title("S1-GOB: Guided On Boarding")
@@ -76,64 +74,25 @@ class GUIInput:
         # Create tooltip for the API Token entry box
         self.token_label = ttk.Label(self.tab1, text="API Token:")
         self.token_label.pack(padx=10, pady=2)
-        self.token_entry = ttk.Entry(self.tab1)
+        self.token_entry = ttk.Combobox(self.tab1)
         self.token_entry.pack(padx=10, pady=2)
         self.token_entry.insert(0, "")
-        self.add_tooltip(self.token_entry,
-                         "Enter your API token obtained from the console (User or Service User token)")
+        self.add_tooltip(self.token_entry, "Enter your API token obtained from the console (User or Service User token)")
 
         # Create tooltip for the Domain entry box
         self.domain_label = ttk.Label(self.tab1, text="Domain:")
         self.domain_label.pack(padx=10, pady=2)
-        self.domain_entry = ttk.Entry(self.tab1)
+        self.domain_entry = ttk.Combobox(self.tab1)
         self.domain_entry.pack(padx=10, pady=2)
         self.domain_entry.insert(0, "")
-        self.add_tooltip(self.domain_entry,
-                         "Enter the domain name that ends with '.sentinelone.net'")
+        self.add_tooltip(self.domain_entry, "Enter the domain name in this format '[].sentinelone.net'")
 
         # Create tooltip for the User entry box
         self.user_label = ttk.Label(self.tab1, text="User: (Optional)")
         self.user_label.pack(padx=10, pady=2)
         self.user_entry = ttk.Combobox(self.tab1)
         self.user_entry.pack(padx=10, pady=2)
-        self.add_tooltip(self.user_entry, "Enter your user email. This field optional")
-
-        # Load the previously selected value from storage or set a default value
-        def load_previous_user():
-            # Implement the code to load the previously selected user from storage
-            # For example, if using a file-based storage:
-            try:
-                with open('user_history.txt', 'r') as file:
-                    user = file.read().strip()
-                    return user
-            except FileNotFoundError:
-                return ""
-
-        previous_user = load_previous_user()
-
-        previous_user = load_previous_user()
-        if previous_user in self.user_history:
-            self.user_entry.set(previous_user)
-        else:
-            self.user_entry.set("")
-
-        # Update the user history list when a new value is selected
-        def update_selected_user(event):
-            selected_user = self.user_entry.get()
-            if selected_user not in self.user_history:
-                self.user_history.append(selected_user)
-            save_user_history(self.user_history)
-
-        # Save the user history list to storage
-        def save_user_history(history):
-            # Implement the code to save the user history to storage
-            pass
-
-        # Bind the event to update the selected value and user history
-        self.user_entry.bind("<<ComboboxSelected>>", update_selected_user)
-
-        # Set the values for the user history dropdown
-        self.user_entry['values'] = self.user_history
+        self.add_tooltip(self.user_entry, "Enter your user email. This field is optional")
 
         # Create the "Start" button using tkmacosx:
         self.create_start_button = Button(self.tab1, text="Start", bg='green', fg='white', font=('Helvetica', 15),
@@ -154,7 +113,12 @@ class GUIInput:
         style = ttk.Style()
         style.configure('Purple.TButton', foreground='white', background='purple', font=('Helvetica', 15), width=20)
         refresh_button = ttk.Button(self.tab2, text="Refresh folder", command=self.refresh, style='Purple.TButton')
-        refresh_button.pack(padx=10, pady=10, side=tk.TOP)
+        refresh_button.pack(padx=10, pady=10)
+
+        # Set history for each combobox
+        self.token_entry['values'] = self.load_from_history("token")
+        self.domain_entry['values'] = self.load_from_history("domain")
+        self.user_entry['values'] = self.load_from_history("user")
 
         # Create a label to show the files in the RawData folder
         label = ttk.Label(self.tab2, text="Files in the 'RawData' folder:")
@@ -270,6 +234,11 @@ class GUIInput:
             self.create_start_button.config(state=NORMAL)
             return
 
+        # Save inputs to history
+        self.save_to_history("token", self.token)
+        self.save_to_history("domain", self.domain)
+        self.save_to_history("user", self.user)
+
         # Create progress bar
         progress_bar = ttk.Progressbar(self.root, orient="horizontal", mode="indeterminate", length=200)
         progress_bar.pack(fill="x", padx=10, pady=10)
@@ -279,10 +248,56 @@ class GUIInput:
         script_thread = threading.Thread(target=self.run_script, args=(progress_bar,))
         script_thread.start()
 
+    def save_to_history(self, field, value):
+        # Get the existing history for the field
+        history = self.load_from_history(field)
+
+        # Remove the value if it already exists
+        if value in history:
+            history.remove(value)
+
+        # Add the value at the beginning of the history list
+        history.insert(0, value)
+
+        # Limit the history to 10 items
+        history = history[:10]
+
+        # Save the updated history to a file
+        with open(f"{field}_history.txt", "w") as file:
+            file.write("\n".join(history))
+
+        # Update the combobox values with the latest history
+        if field == "token":
+            self.token_entry['values'] = history
+        elif field == "domain":
+            self.domain_entry['values'] = history
+        elif field == "user":
+            self.user_entry['values'] = history
+
+    def load_from_history(self, field):
+        try:
+            with open(f"{field}_history.txt", "r") as file:
+                history = file.read().splitlines()
+        except FileNotFoundError:
+            history = []
+
+        return history
+
     def add_tooltip(self, widget, text):
-        tooltip = ToolTip(widget, text)
-        widget.bind("<Enter>", tooltip.show_tooltip)
-        widget.bind("<Leave>", tooltip.hide_tooltip)
+        widget.bind("<Enter>", lambda event: self.show_tooltip(text))
+        widget.bind("<Leave>", lambda event: self.hide_tooltip())
+
+    def show_tooltip(self, text):
+        self.tooltip = tk.Toplevel(self.root)
+        self.tooltip.wm_overrideredirect(True)
+        self.tooltip.wm_geometry(f"+{self.root.winfo_pointerx()}+{self.root.winfo_pointery() + 20}")
+
+        label = ttk.Label(self.tooltip, text=text, background="lightyellow", relief="solid", borderwidth=1,
+                          font=("Arial", "10", "normal"))
+        label.pack()
+
+    def hide_tooltip(self):
+        self.tooltip.destroy()
 
     def run_script(self, progress_bar):
         # Get token, domain and user
