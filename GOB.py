@@ -32,7 +32,7 @@ class GUIInput:
         # Create GUI
         self.process_rawdata = None
         self.root = tk.Tk()
-        self.root.title("S1-GOB: Guided On Boarding")
+        self.root.title("S1-GOB: Guided On Boarding V1.7")
 
         # Function to open GUI in the middle of the screen
         def open_gui_centered():
@@ -46,6 +46,11 @@ class GUIInput:
 
         # Call the function to open the GUI window centered
         open_gui_centered()
+
+        # Create a folder named "user_history" in the S1GOB directory if it doesn't exist
+        self.history_folder = os.path.expanduser("~/S1GOB/user_history")
+        if not os.path.exists(self.history_folder):
+            os.makedirs(self.history_folder)
 
         self.progress_window = None  # Initialize progress_window attribute
         self.cancel_button = None
@@ -77,7 +82,10 @@ class GUIInput:
         self.token_entry = ttk.Combobox(self.tab1)
         self.token_entry.pack(padx=10, pady=2)
         self.token_entry.insert(0, "")
-        self.add_tooltip(self.token_entry, "Enter your API token obtained from the console (User or Service User token)")
+        self.token_entry.config(width=40)  # Set the width of the entry field
+        self.add_tooltip(self.token_entry,
+                         "Enter your API token obtained from the console (User or Service User token)")
+        self.token_entry.bind("<FocusIn>", self.hide_tooltip)
 
         # Create tooltip for the Domain entry box
         self.domain_label = ttk.Label(self.tab1, text="Domain:")
@@ -85,14 +93,18 @@ class GUIInput:
         self.domain_entry = ttk.Combobox(self.tab1)
         self.domain_entry.pack(padx=10, pady=2)
         self.domain_entry.insert(0, "")
+        self.domain_entry.config(width=40)  # Set the width of the entry field
         self.add_tooltip(self.domain_entry, "Enter the domain name in this format '[].sentinelone.net'")
+        self.domain_entry.bind("<FocusIn>", self.hide_tooltip)
 
         # Create tooltip for the User entry box
         self.user_label = ttk.Label(self.tab1, text="User: (Optional)")
         self.user_label.pack(padx=10, pady=2)
         self.user_entry = ttk.Combobox(self.tab1)
         self.user_entry.pack(padx=10, pady=2)
+        self.user_entry.config(width=40)  # Set the width of the entry field
         self.add_tooltip(self.user_entry, "Enter your user email. This field is optional")
+        self.user_entry.bind("<FocusIn>", self.hide_tooltip)
 
         # Create the "Start" button using tkmacosx:
         self.create_start_button = Button(self.tab1, text="Start", bg='green', fg='white', font=('Helvetica', 15),
@@ -164,7 +176,7 @@ class GUIInput:
     def about(self):
         # Create a message box with information about the application
         messagebox.showinfo("About S1-GOB",
-                            "SS1-GOB is a tool that provides comprehensive health checks for customer's SentinelOne environment, enabling you to identify and present issues to your customer quickly and efficiently.\n\nVersion: 1.5.0\n\nCopyright 2023, Ran Jacobi")
+                            "SS1-GOB is a tool that provides comprehensive health checks for customer's SentinelOne environment, enabling you to identify and present issues to your customer quickly and efficiently.\n\nVersion: 1.7.2\n\nCopyright 2023, Ran Jacobi")
 
     def refresh(self):
         # Clear listbox
@@ -199,17 +211,6 @@ class GUIInput:
                 print("No CSV files found in the 'RawData' folder.")
         else:
             print("The 'RawData' folder either doesn't exist or is empty.")
-
-    def run_excel_processor(self):
-        # Create an ExcelProcessor object and process the CSV files
-        self.excel_processor = ExcelProcessor("RawData")
-        self.excel_processor.process_csv_files()
-
-        # Destroy the progress window and reset the instance variables
-        if self.progress_window:
-            self.progress_window.destroy()
-        self.progress_window = None
-        self.cancel_button = None
 
     def run_excel_processor(self):
         # Create an ExcelProcessor object and process the CSV files
@@ -259,11 +260,12 @@ class GUIInput:
         # Add the value at the beginning of the history list
         history.insert(0, value)
 
-        # Limit the history to 10 items
-        history = history[:10]
+        # Limit the history to 5 items
+        history = history[:5]
 
-        # Save the updated history to a file
-        with open(f"{field}_history.txt", "w") as file:
+        # Save the updated history to a file in the user_history folder
+        file_path = os.path.join(self.history_folder, f"{field}_history.txt")
+        with open(file_path, "w") as file:
             file.write("\n".join(history))
 
         # Update the combobox values with the latest history
@@ -275,8 +277,9 @@ class GUIInput:
             self.user_entry['values'] = history
 
     def load_from_history(self, field):
+        file_path = os.path.join(self.history_folder, f"{field}_history.txt")
         try:
-            with open(f"{field}_history.txt", "r") as file:
+            with open(file_path, "r") as file:
                 history = file.read().splitlines()
         except FileNotFoundError:
             history = []
@@ -293,11 +296,12 @@ class GUIInput:
         self.tooltip.wm_geometry(f"+{self.root.winfo_pointerx()}+{self.root.winfo_pointery() + 20}")
 
         label = ttk.Label(self.tooltip, text=text, background="lightyellow", relief="solid", borderwidth=1,
-                          font=("Arial", "10", "normal"))
+                          font=("David", "12", "bold"))
         label.pack()
 
-    def hide_tooltip(self):
-        self.tooltip.destroy()
+    def hide_tooltip(self, event=None):
+        if self.tooltip:
+            self.tooltip.destroy()
 
     def run_script(self, progress_bar):
         # Get token, domain and user
@@ -458,9 +462,6 @@ class ToolTip:
         label = ttk.Label(self.tooltip, text=self.text, background="#9b59b6", foreground="#ffffff", relief="solid",
                           borderwidth=1)
         label.pack()
-    def hide_tooltip(self, event):
-        if self.tooltip:
-            self.tooltip.destroy()
 
 gui = GUIInput()
 gui.root.mainloop()
