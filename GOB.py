@@ -3,7 +3,7 @@
 import shutil
 import subprocess
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk
 from getapi import APIClient
 from getexcel import ExcelProcessor
 import os
@@ -13,7 +13,7 @@ from tkinter import *
 from tkmacosx import Button
 from tkinter import messagebox
 import threading
-
+from cryptography.fernet import Fernet
 
 
 class TextRedirector:
@@ -76,11 +76,15 @@ class GUIInput:
         about_button = Button(self.tab1, command=self.about, text="About", bg='purple', fg='black')
         about_button.pack(side=tk.TOP, padx=10, pady=10)
 
+        # Create a frame for spacing
+        spacing_frame = Frame(self.tab1, height=20)
+        spacing_frame.pack()
+
         # Create tooltip for the API Token entry box
         self.token_label = ttk.Label(self.tab1, text="API Token:")
-        self.token_label.pack(padx=10, pady=2)
+        self.token_label.pack(padx=10, pady=2, anchor='center')
         self.token_entry = ttk.Combobox(self.tab1)
-        self.token_entry.pack(padx=10, pady=2)
+        self.token_entry.pack(padx=10, pady=2, anchor='center')
         self.token_entry.insert(0, "")
         self.token_entry.config(width=40)  # Set the width of the entry field
         self.add_tooltip(self.token_entry,
@@ -89,9 +93,9 @@ class GUIInput:
 
         # Create tooltip for the Domain entry box
         self.domain_label = ttk.Label(self.tab1, text="Domain:")
-        self.domain_label.pack(padx=10, pady=2)
+        self.domain_label.pack(padx=10, pady=2, anchor='center')
         self.domain_entry = ttk.Combobox(self.tab1)
-        self.domain_entry.pack(padx=10, pady=2)
+        self.domain_entry.pack(padx=10, pady=2, anchor='center')
         self.domain_entry.insert(0, "")
         self.domain_entry.config(width=40)  # Set the width of the entry field
         self.add_tooltip(self.domain_entry, "Enter the domain name in this format '[].sentinelone.net'")
@@ -99,17 +103,22 @@ class GUIInput:
 
         # Create tooltip for the User entry box
         self.user_label = ttk.Label(self.tab1, text="User: (Optional)")
-        self.user_label.pack(padx=10, pady=2)
+        self.user_label.pack(padx=10, pady=2, anchor='center')
         self.user_entry = ttk.Combobox(self.tab1)
-        self.user_entry.pack(padx=10, pady=2)
+        self.user_entry.pack(padx=10, pady=2, anchor='center')
+        self.user_entry.insert(0, "")
         self.user_entry.config(width=40)  # Set the width of the entry field
         self.add_tooltip(self.user_entry, "Enter your user email. This field is optional")
         self.user_entry.bind("<FocusIn>", self.hide_tooltip)
 
+        # Create a frame for spacing
+        spacing_frame = Frame(self.tab1, height=20)
+        spacing_frame.pack()
+
         # Create the "Start" button using tkmacosx:
-        self.create_start_button = Button(self.tab1, text="Start", bg='green', fg='white', font=('Helvetica', 15),
+        self.create_start_button = Button(self.tab1, text="Start", bg='green', fg='white', font=('Helvetica', 20),
                                           command=self.start_script)
-        self.create_start_button.pack(padx=20, pady=20)
+        self.create_start_button.pack(padx=20, pady=20, anchor='center')
 
         # Set permissions for the RawData folder
         try:
@@ -157,12 +166,12 @@ class GUIInput:
 
         # Create the "create_excel_file" button using tkmacosx:
         create_excel_button = Button(self.tab2, text="Create Excel File", bg='green', fg='white',
-                                     font=('Helvetica', 15),
+                                     font=('Helvetica', 20),
                                      borderless=1, command=self.create_excel_file)
         create_excel_button.pack(padx=20, pady=20)
 
         # Create console-like area for output
-        self.console = tk.Text(self.root, height=30, width=70)
+        self.console = tk.Text(self.root, height=60, width=120)
         self.console.pack(padx=10, pady=10)
 
         # Redirect stdout to the console
@@ -265,8 +274,11 @@ class GUIInput:
 
         # Save the updated history to a file in the user_history folder
         file_path = os.path.join(self.history_folder, f"{field}_history.txt")
-        with open(file_path, "w") as file:
-            file.write("\n".join(history))
+        cipher_suite = self.get_cipher_suite()
+        encrypted_history = [cipher_suite.encrypt(item.encode()) for item in history]
+        with open(file_path, "wb") as file:
+            for item in encrypted_history:
+                file.write(item + b"\n")
 
         # Update the combobox values with the latest history
         if field == "token":
@@ -279,16 +291,35 @@ class GUIInput:
     def load_from_history(self, field):
         file_path = os.path.join(self.history_folder, f"{field}_history.txt")
         try:
-            with open(file_path, "r") as file:
-                history = file.read().splitlines()
+            with open(file_path, "rb") as file:
+                encrypted_history = file.read().splitlines()
+            cipher_suite = self.get_cipher_suite()
+            history = []
+            for item in encrypted_history:
+                decrypted_item = cipher_suite.decrypt(item)
+                history.append(decrypted_item.decode())
         except FileNotFoundError:
             history = []
 
         return history
 
+    def get_cipher_suite(self):
+        # Load or generate the encryption key
+        key_file = os.path.join(self.history_folder, "encryption_key.txt")
+        if os.path.exists(key_file):
+            with open(key_file, "rb") as file:
+                key = file.read()
+        else:
+            key = Fernet.generate_key()
+            with open(key_file, "wb") as file:
+                file.write(key)
+
+        return Fernet(key)
+
     def add_tooltip(self, widget, text):
         widget.bind("<Enter>", lambda event: self.show_tooltip(text))
         widget.bind("<Leave>", lambda event: self.hide_tooltip())
+        widget.bind("<FocusOut>", lambda event: self.hide_tooltip())
 
     def show_tooltip(self, text):
         self.tooltip = tk.Toplevel(self.root)
@@ -300,7 +331,8 @@ class GUIInput:
         label.pack()
 
     def hide_tooltip(self, event=None):
-        if self.tooltip:
+        if self.tooltip and self.tooltip.winfo_exists():
+            self.tooltip.grab_release()
             self.tooltip.destroy()
 
     def run_script(self, progress_bar):
