@@ -15,7 +15,6 @@ from tkinter import messagebox
 import threading
 from cryptography.fernet import Fernet
 
-
 class TextRedirector:
     def __init__(self, widget, tag="stdout"):
         self.widget = widget
@@ -89,7 +88,6 @@ class GUIInput:
         self.token_entry.config(width=40)  # Set the width of the entry field
         self.add_tooltip(self.token_entry,
                          "Enter your API token obtained from the console (User or Service User token)")
-        self.token_entry.bind("<FocusIn>", self.hide_tooltip)
 
         # Create tooltip for the Domain entry box
         self.domain_label = ttk.Label(self.tab1, text="Domain:")
@@ -99,7 +97,6 @@ class GUIInput:
         self.domain_entry.insert(0, "")
         self.domain_entry.config(width=40)  # Set the width of the entry field
         self.add_tooltip(self.domain_entry, "Enter the domain name in this format '[].sentinelone.net'")
-        self.domain_entry.bind("<FocusIn>", self.hide_tooltip)
 
         # Create tooltip for the User entry box
         self.user_label = ttk.Label(self.tab1, text="User: (Optional)")
@@ -109,7 +106,6 @@ class GUIInput:
         self.user_entry.insert(0, "")
         self.user_entry.config(width=40)  # Set the width of the entry field
         self.add_tooltip(self.user_entry, "Enter your user email. This field is optional")
-        self.user_entry.bind("<FocusIn>", self.hide_tooltip)
 
         # Create a frame for spacing
         spacing_frame = Frame(self.tab1, height=20)
