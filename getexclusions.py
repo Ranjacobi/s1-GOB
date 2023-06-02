@@ -1,26 +1,30 @@
+import csv
 from tkinter import messagebox
-from openpyxl import Workbook
+
 from openpyxl.reader.excel import load_workbook
 from openpyxl.styles import PatternFill, Font, Border, Side
-from openpyxl.utils.dataframe import dataframe_to_rows
-import pandas as pd
 import glob
-import os
 import datetime
 import random
 import time
+import os
+import pandas as pd
+from openpyxl import Workbook
+from openpyxl.utils.dataframe import dataframe_to_rows
 
 class ExclusionsProcessor:
     def __init__(self):
         self.workbook = Workbook()
         self.worksheet = self.workbook.active
         self.worksheet.title = "MAIN"
+
     def combine_functions(self):
         self.process_csv_files()
         self.call_pivot_by_exclusion()
         self.create_pivot_by_exclusion_mode()
-        self.scan_excel_file()
+        self.search_keywords_and_create_pivot()
         self.create_exclusions_data()
+
 
     def process_csv_files(self):
         # Step 1: Importing all CSVs from the RawData folder
@@ -127,57 +131,79 @@ class ExclusionsProcessor:
         for row in dataframe_to_rows(pivot_table, index=False, header=True):
             pivot_sheet.append(row)
 
-    def scan_excel_file(self):
-        # Specify the file path
-        excel_file = os.path.expanduser("~/GOB/not.xlsx")
+    def search_keywords_and_create_pivot(self):
+        # Create a new sheet for "Not Recommended"
+        not_recommended_sheet = self.workbook.create_sheet(title="Not Recommended")
 
-        # Check if the file exists
-        if not os.path.isfile(excel_file):
-            print("Excel file does not exist.")
+        # Load the "not.xlsx" file from the directory
+        not_file_path = os.path.expanduser("~/S1GOB/not.xlsx")
+        if not os.path.exists(not_file_path):
+            print("Error: File 'not.xlsx' not found.")
             return
 
-        # Read the Excel file
-        df = pd.read_excel(excel_file, engine='openpyxl')
+        # Load the "not.xlsx" workbook
+        not_workbook = load_workbook(not_file_path)
 
-        # Create a new sheet called "Not Recommended" if it doesn't already exist
-        with pd.ExcelWriter(excel_file, engine='openpyxl', mode='a') as writer:
-            writer.book = Workbook()
-            writer.sheets = {ws.title: ws for ws in writer.book.worksheets}  # Set the sheets dictionary
+        # Get the active sheet of the "not.xlsx" workbook
+        not_worksheet = not_workbook.active
 
-            if 'Not Recommended' not in writer.sheets:
-                writer.book.create_sheet('Not Recommended')
+        # Define the folder path containing the CSV files
+        raw_data_folder = os.path.expanduser("~/S1GOB/RawData")
 
-            # Write the DataFrame to the "Not Recommended" sheet
-            df.to_excel(writer, sheet_name='Not Recommended', index=False)
+        # Get the CSV file paths
+        csv_files = glob.glob(os.path.join(raw_data_folder, "exclusions-*.csv"))
 
-            # Count the keywords and create a pivot table
-            total_rows = len(df)
-            processed_rows = 0
-            keyword = 'keyword'  # Modify this with the actual keyword you want to search
+        print("CSV Files:")
+        for csv_file in csv_files:
+            print(csv_file)
 
-            for i, row in df.iterrows():
-                count = sum(row.astype(str).str.contains(keyword, case=False))
-                df.at[i, 'Count'] = count
+        # Get the column index of the "description" column in CSV files
+        description_column_index = None
 
-                processed_rows += 1
+        # Iterate over each CSV file to find the "description" column index
+        for csv_file in csv_files:
+            with open(csv_file, 'r') as file:
+                reader = csv.reader(file)
+                header_row = next(reader, None)  # Read the header row
+                if header_row and "description" in header_row:
+                    description_column_index = header_row.index("description")
+                    break
 
-                # Calculate progress percentage
-                progress = (processed_rows / total_rows) * 100
-                print(f"Progress: {progress:.2f}%")  # Print progress percentage
-                print("Still searching...")
+        # If "description" column index is found, proceed with comparison
+        if description_column_index is not None:
+            # Create a dictionary to store the counts
+            count_dict = {}
 
-            pivot_table = df.pivot_table(index='Count', aggfunc='size')
+            # Iterate over each cell in the "not.xlsx" worksheet
+            for row in not_worksheet.iter_rows():
+                for cell in row:
+                    # Get the cell value
+                    cell_value = cell.value
 
-            # Write the pivot table to the "Not Recommended" sheet
-            pivot_table.to_excel(writer, sheet_name='Not Recommended', startrow=total_rows + 2)
+                    # Count the occurrences of cell value in the CSV files
+                    count = 0
+                    for csv_file in csv_files:
+                        with open(csv_file, 'r') as file:
+                            reader = csv.reader(file)
+                            for csv_row in reader:
+                                if cell_value.lower() in csv_row[description_column_index].lower():
+                                    count += 1
 
-        print("Scanning and counting completed.")
+                    # Store the count in the dictionary if it's greater than zero
+                    if count > 0:
+                        count_dict[cell_value] = count
 
-        # Prompt the user if they want to open the modified file
-        response = input("Do you want to open the modified file? (yes/no): ")
-        if response.lower() == 'yes':
-            # Open the file using the default application
-            os.system(f'open "{excel_file}"')
+            # Sort the count dictionary in descending order by values
+            sorted_counts = sorted(count_dict.items(), key=lambda x: x[1], reverse=True)
+
+            # Write the sorted counts to the "Not Recommended" sheet
+            for cell_value, count in sorted_counts:
+                not_recommended_sheet.append([cell_value, count])
+
+        # Print the contents of the "Not Recommended" sheet for testing
+        print("Not Recommended Sheet:")
+        for row in not_recommended_sheet.iter_rows(values_only=True):
+            print(row)
 
     def create_exclusions_data(self):
         # Iterate over each sheet in the workbook
