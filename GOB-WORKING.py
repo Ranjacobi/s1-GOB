@@ -489,8 +489,8 @@ class RawDataExcelTab(ttk.Frame):
 class GUIInput:
     def __init__(self):
         # self.token_default = "HOep4dW0ocBDfcS6TP3wau5SkCVS0500KlmEAmEXBX1KB4iTYsI570GjzytZcJL6MwNylKVmI0HLX55s"
-        self.token_default = "RMqHGGXQcLoyPnded7mUABH2vq5XaB0Rzh4snFS1IAVJgkFnr99DqwDw4gRV7O2dWeHq5GkEZpBxM81q" #allsupport3
-        self.domain_default = "usea1-support3.sentinelone.net"
+        self.token_default = ""
+        self.domain_default = ""
         self.user_default = ""
 
         self.root = tk.Tk()
